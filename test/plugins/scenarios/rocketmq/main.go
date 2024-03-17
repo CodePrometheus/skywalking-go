@@ -21,9 +21,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"sync"
-	"time"
 
 	"github.com/apache/rocketmq-client-go/v2"
 	"github.com/apache/rocketmq-client-go/v2/consumer"
@@ -40,18 +38,20 @@ const (
 	retry = 2
 	topic = "sw-topic"
 	group = "sw-group"
-	msg   = "I love skywalking %s thousand"
+	msg   = "I love skywalking 3 thousand"
 )
 
 func main() {
 	route := http.NewServeMux()
 	route.HandleFunc("/execute", func(res http.ResponseWriter, req *http.Request) {
-		TestProCon()
+		testProduceConsume()
 		_, _ = res.Write([]byte("execute success"))
 	})
 	route.HandleFunc("/health", func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte("ok"))
 	})
+	go consumerMsg()
+
 	fmt.Println("start client")
 	err := http.ListenAndServe(":8080", route)
 	if err != nil {
@@ -59,7 +59,7 @@ func main() {
 	}
 }
 
-func TestProCon() {
+func testProduceConsume() {
 	tests := []struct {
 		name string
 		fn   testFunc
@@ -92,12 +92,10 @@ func sendSyncMsg() error {
 		return err
 	}
 	var msgs []*primitive.Message
-	for i := 1; i < 2; i++ {
-		msgs = append(msgs, primitive.NewMessage(
-			topic,
-			[]byte(fmt.Sprintf(msg, strconv.Itoa(i)))),
-		)
-	}
+	msgs = append(msgs, primitive.NewMessage(
+		topic,
+		[]byte(msg)),
+	)
 
 	res, err := p.SendSync(context.Background(), msgs...)
 	if err != nil {
@@ -111,7 +109,6 @@ func sendSyncMsg() error {
 		fmt.Printf("shutdown producer error: %s\n", err.Error())
 		return err
 	}
-	consumerMsg()
 	return nil
 }
 
@@ -132,30 +129,28 @@ func sendAsyncMsg() error {
 		return err
 	}
 	var wg sync.WaitGroup
-	for i := 1; i < 2; i++ {
-		wg.Add(1)
-		err = p.SendAsync(context.Background(),
-			func(ctx context.Context, result *primitive.SendResult, e error) {
-				if e != nil {
-					fmt.Printf("receive message error: %s\n", err)
-				} else {
-					fmt.Printf("send message success: result=%s\n", result.String())
-				}
-				wg.Done()
-			}, primitive.NewMessage(topic, []byte(fmt.Sprintf(msg, strconv.Itoa(i)))))
+	wg.Add(1)
+	err = p.SendAsync(context.Background(),
+		func(ctx context.Context, result *primitive.SendResult, e error) {
+			if e != nil {
+				fmt.Printf("receive message error: %s\n", err)
+			} else {
+				fmt.Printf("send message success: result=%s\n", result.String())
+			}
+			wg.Done()
+		}, primitive.NewMessage(topic, []byte(msg)))
 
-		if err != nil {
-			fmt.Printf("send message error: %s\n", err)
-			return err
-		}
+	if err != nil {
+		fmt.Printf("send message error: %s\n", err)
+		return err
 	}
+	
 	wg.Wait()
 	err = p.Shutdown()
 	if err != nil {
 		fmt.Printf("shutdown producer error: %s\n", err.Error())
 		return err
 	}
-	consumerMsg()
 	return nil
 }
 
@@ -175,12 +170,10 @@ func sendOneWayMsg() error {
 		return err
 	}
 	var msgs []*primitive.Message
-	for i := 1; i < 2; i++ {
-		msgs = append(msgs, primitive.NewMessage(
-			topic,
-			[]byte(fmt.Sprintf(msg, strconv.Itoa(i)))),
-		)
-	}
+	msgs = append(msgs, primitive.NewMessage(
+		topic,
+		[]byte(msg)),
+	)
 	err = p.SendOneWay(context.Background(), msgs...)
 	if err != nil {
 		fmt.Printf("send_one_way message error: %s\n", err)
@@ -191,7 +184,6 @@ func sendOneWayMsg() error {
 		fmt.Printf("shutdown producer error: %s\n", err.Error())
 		return err
 	}
-	consumerMsg()
 	return nil
 }
 
@@ -204,19 +196,20 @@ func consumerMsg() {
 	if err != nil {
 		fmt.Printf("new consumer error: %s\n", err.Error())
 	}
-	err = c.Subscribe(topic, consumer.MessageSelector{}, func(ctx context.Context,
-		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
-		for i := range msgs {
-			fmt.Printf("subscribe callback: %v \n", msgs[i])
+	for {
+		err = c.Subscribe(topic, consumer.MessageSelector{}, func(ctx context.Context,
+			msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+			for i := range msgs {
+				fmt.Printf("subscribe callback: %v \n", msgs[i])
+			}
+			return consumer.ConsumeSuccess, nil
+		})
+		if err != nil {
+			fmt.Println(err.Error())
 		}
-		return consumer.ConsumeSuccess, nil
-	})
-	if err != nil {
-		fmt.Println(err.Error())
+		err = c.Start()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 	}
-	err = c.Start()
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-	time.Sleep(time.Second)
 }

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -32,67 +31,71 @@ import (
 type testFunc func(RabbitClient) error
 
 var (
-	uri                    = "amqp://admin:123456@amqp-server:5672"
-	queue1                 = "sw-queue-1"
-	queue2                 = "sw-queue-2"
-	body                   = "I love skywalking 3 thousand"
-	consumerTag1           = "sw-consumer-1"
-	consumerTag2           = "sw-consumer-2"
-	consumerTrigger        = make(chan struct{})
-	consumerWithCtxTrigger = make(chan struct{})
+	uri          = "amqp://admin:123456@localhost:5672"
+	queue1       = "sw-queue-1"
+	queue2       = "sw-queue-2"
+	body         = "I love skywalking 3 thousand"
+	consumerTag1 = "sw-consumer-1"
+	consumerTag2 = "sw-consumer-2"
+	conn         *amqp.Connection
+	client       RabbitClient
 )
 
 func main() {
-	conn, err := amqp.Dial(uri)
+	var err error
+	conn, err = amqp.Dial(uri)
 	if err != nil {
 		panic(err)
 	}
-	client, err := NewRabbitMQClient(conn)
+	client, err = NewRabbitMQClient(conn)
 	if err != nil {
 		panic(err)
 	}
+	consumerHelper()
 
 	route := http.NewServeMux()
 	route.HandleFunc("/execute", func(res http.ResponseWriter, req *http.Request) {
-		tests := []struct {
-			name string
-			fn   testFunc
-		}{
-			{"testSimpleConsumer", testSimpleConsumer},
-			{"testConsumerWithCtx", testConsumerWithCtx},
-		}
-		for _, test := range tests {
-			fmt.Printf("excute test case: %s\n", test.name)
-			if subErr := test.fn(client); subErr != nil {
-				fmt.Printf("test case %s failed: %v", test.name, subErr)
-			}
-		}
+		testProduceConsume()
 		_, _ = res.Write([]byte("execute success"))
 	})
 	route.HandleFunc("/health", func(res http.ResponseWriter, req *http.Request) {
 		_, _ = res.Write([]byte("ok"))
 	})
-
+	fmt.Println("start client")
 	err = http.ListenAndServe(":8080", route)
 	if err != nil {
 		log.Fatalf("client start error: %v \n", err)
 	}
-	select {}
+}
+
+func testProduceConsume() {
+	tests := []struct {
+		name string
+		fn   testFunc
+	}{
+		{"testSimpleConsumer", testSimpleConsumer},
+		{"testConsumerWithCtx", testConsumerWithCtx},
+	}
+	for _, test := range tests {
+		fmt.Printf("excute test case: %s\n", test.name)
+		if subErr := test.fn(client); subErr != nil {
+			fmt.Printf("test case %s failed: %v", test.name, subErr)
+		}
+	}
+}
+
+func consumerHelper() {
+	go consumer()
+	go consumerWithContext()
 }
 
 func testSimpleConsumer(client RabbitClient) error {
 	producer(queue1, client)
-	go consumer()
-	consumerTrigger <- struct{}{}
-	time.Sleep(time.Second)
 	return nil
 }
 
 func testConsumerWithCtx(client RabbitClient) error {
 	producer(queue2, client)
-	go consumerWithContext()
-	consumerWithCtxTrigger <- struct{}{}
-	time.Sleep(time.Second)
 	return nil
 }
 
@@ -110,60 +113,30 @@ func producer(queue string, client RabbitClient) {
 }
 
 func consumer() {
-	<-consumerTrigger
-	consumeConn, err := amqp.Dial(uri)
-	if err != nil {
-		fmt.Println("Failed to Dial Consume, err: ", err)
-	}
-	consumeClient, err := NewRabbitMQClient(consumeConn)
-	if err != nil {
-		fmt.Println("Failed to Channel Consume, err: ", err)
-	}
-	msgs, err := consumeClient.Consume(queue1, consumerTag1, false)
-	if err != nil {
-		fmt.Println("Failed to Consume msg, err: ", err)
-	}
-	log.Printf("[Consumer] Waiting for messages.\n")
-	for d := range msgs {
-		log.Printf("Received a message: %s\n", string(d.Body))
-		d.Ack(false)
-	}
-	err = consumeClient.Cancel(consumerTag1)
-	if err != nil {
-		fmt.Println("Failed to Cancel Consume, err: ", err)
-	}
-	err = consumeConn.Close()
-	if err != nil {
-		fmt.Println("Failed to Close Cancel, err: ", err)
+	for {
+		msgs, err := client.Consume(queue1, consumerTag1, false)
+		if err != nil {
+			fmt.Println("Failed to Consume msg, err: ", err)
+		}
+		log.Printf("[Consumer] Waiting for messages.\n")
+		for d := range msgs {
+			log.Printf("Received a message: %s\n", string(d.Body))
+			d.Ack(false)
+		}
 	}
 }
 
 func consumerWithContext() {
-	<-consumerWithCtxTrigger
-	consumeConn, err := amqp.Dial(uri)
-	if err != nil {
-		fmt.Println("Failed to Dial ConsumerWithContext, err: ", err)
-	}
-	consumeClient, err := NewRabbitMQClient(consumeConn)
-	if err != nil {
-		fmt.Println("Failed to Channel ConsumerWithContext, err: ", err)
-	}
-	msgs, err := consumeClient.Consume(queue2, consumerTag2, false)
-	if err != nil {
-		fmt.Println("Failed to Consume msg, err: ", err)
-	}
-	log.Printf("[ConsumerWithContext] Waiting for messages.\n")
-	for d := range msgs {
-		log.Printf("Received a message: %s", string(d.Body))
-		d.Ack(false)
-	}
-	err = consumeClient.Cancel(consumerTag2)
-	if err != nil {
-		fmt.Println("Failed to Cancel ConsumerWithContext, err: ", err)
-	}
-	err = consumeConn.Close()
-	if err != nil {
-		fmt.Println("Failed to Close ConsumerWithContext, err: ", err)
+	for {
+		msgs, err := client.Consume(queue2, consumerTag2, false)
+		if err != nil {
+			fmt.Println("Failed to Consume msg, err: ", err)
+		}
+		log.Printf("[ConsumerWithContext] Waiting for messages.\n")
+		for d := range msgs {
+			log.Printf("Received a message: %s", string(d.Body))
+			d.Ack(false)
+		}
 	}
 }
 
