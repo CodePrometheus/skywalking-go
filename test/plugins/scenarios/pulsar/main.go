@@ -33,7 +33,7 @@ import (
 type testFunc func() error
 
 var (
-	url          = "pulsar://pulsar-server:6650"
+	url          = "pulsar://localhost:6650"
 	msg          = "I love skywalking 3 thousand"
 	topic        = "sw-topic"
 	subscription = "sw-subscription"
@@ -58,7 +58,7 @@ func main() {
 	route.HandleFunc("/health", func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte("ok"))
 	})
-	err = http.ListenAndServe(":8080", route)
+	err = http.ListenAndServe(":8082", route)
 	if err != nil {
 		fmt.Printf("client start error: %v \n", err)
 	}

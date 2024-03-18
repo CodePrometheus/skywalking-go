@@ -37,21 +37,15 @@ var (
 	body         = "I love skywalking 3 thousand"
 	consumerTag1 = "sw-consumer-1"
 	consumerTag2 = "sw-consumer-2"
-	conn         *amqp.Connection
 	client       RabbitClient
 )
 
 func main() {
 	var err error
-	conn, err = amqp.Dial(uri)
+	client, err = NewRabbitMQClient()
 	if err != nil {
 		panic(err)
 	}
-	client, err = NewRabbitMQClient(conn)
-	if err != nil {
-		panic(err)
-	}
-	consumerHelper()
 
 	route := http.NewServeMux()
 	route.HandleFunc("/execute", func(res http.ResponseWriter, req *http.Request) {
@@ -62,7 +56,7 @@ func main() {
 		_, _ = res.Write([]byte("ok"))
 	})
 	fmt.Println("start client")
-	err = http.ListenAndServe(":8080", route)
+	err = http.ListenAndServe(":8081", route)
 	if err != nil {
 		log.Fatalf("client start error: %v \n", err)
 	}
@@ -85,8 +79,8 @@ func testProduceConsume() {
 }
 
 func consumerHelper() {
-	go consumer()
-	go consumerWithContext()
+	consumer()
+	consumerWithContext()
 }
 
 func testSimpleConsumer(client RabbitClient) error {
@@ -96,6 +90,7 @@ func testSimpleConsumer(client RabbitClient) error {
 
 func testConsumerWithCtx(client RabbitClient) error {
 	producer(queue2, client)
+	consumerHelper()
 	return nil
 }
 
@@ -113,30 +108,31 @@ func producer(queue string, client RabbitClient) {
 }
 
 func consumer() {
-	for {
+	go func() {
+		fmt.Println("here1")
 		msgs, err := client.Consume(queue1, consumerTag1, false)
+		fmt.Println("here2")
 		if err != nil {
 			fmt.Println("Failed to Consume msg, err: ", err)
 		}
 		log.Printf("[Consumer] Waiting for messages.\n")
-		for d := range msgs {
-			log.Printf("Received a message: %s\n", string(d.Body))
-			d.Ack(false)
-		}
-	}
+		handle(msgs)
+	}()
 }
 
 func consumerWithContext() {
-	for {
-		msgs, err := client.Consume(queue2, consumerTag2, false)
-		if err != nil {
-			fmt.Println("Failed to Consume msg, err: ", err)
-		}
-		log.Printf("[ConsumerWithContext] Waiting for messages.\n")
-		for d := range msgs {
-			log.Printf("Received a message: %s", string(d.Body))
-			d.Ack(false)
-		}
+	msgs, err := client.Consume(queue2, consumerTag2, false)
+	if err != nil {
+		fmt.Println("Failed to Consume msg, err: ", err)
+	}
+	log.Printf("[ConsumerWithContext] Waiting for messages.\n")
+	go handle(msgs)
+}
+
+func handle(msgs <-chan amqp.Delivery) {
+	for d := range msgs {
+		log.Printf("Received a message: %s", string(d.Body))
+		d.Ack(false)
 	}
 }
 
@@ -148,7 +144,11 @@ type RabbitClient struct {
 	ch *amqp.Channel
 }
 
-func NewRabbitMQClient(conn *amqp.Connection) (RabbitClient, error) {
+func NewRabbitMQClient() (RabbitClient, error) {
+	conn, err := amqp.Dial(uri)
+	if err != nil {
+		panic(err)
+	}
 	ch, err := conn.Channel()
 	if err != nil {
 		return RabbitClient{}, err
