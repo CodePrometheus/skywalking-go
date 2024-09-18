@@ -160,6 +160,7 @@ jobs:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
         run: |
           brew install docker docker-compose colima
+          colima delete
           colima start --arch x86_64
 
           # For testcontainers to find the Colima socket

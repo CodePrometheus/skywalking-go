@@ -134,7 +134,7 @@ func sendAsyncMsg() error {
 	producer.SendAsync(ctx, &pulsar.ProducerMessage{
 		Payload: []byte(msg),
 	}, func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
-		log.Printf("ID1 = %v, Properties = %v", id, message.Properties)
+		log.Printf("ID = %v, Properties = %v", id, message.Properties)
 	})
 	time.Sleep(time.Second)
 	return nil
