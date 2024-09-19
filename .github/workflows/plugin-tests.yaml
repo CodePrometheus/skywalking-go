@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-13]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -46,7 +46,9 @@ jobs:
         run: |
           brew install docker
           brew install colima
-          colima start
+          wget https://raw.githubusercontent.com/Homebrew/homebrew-core/f1a9cf104a9a51779c7a532b658c490f69974839/Formula/q/qemu.rb
+          brew install qemu.rb 2>&1 | tee install.log
+          colima start --arch x86_64
 
           # For testcontainers to find the Colima socket
           # https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#cannot-connect-to-the-docker-daemon-at-unixvarrundockersock-is-the-docker-daemon-running
@@ -134,11 +136,11 @@ jobs:
           name: test-plugins-workspace-${{ matrix.case }}-ubuntu
 
   test-on-macos:
-    if: false
+    if: always()
     name: gin-macos
     needs:
       - build
-    runs-on: macos-12
+    runs-on: macos-13
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v2
@@ -146,7 +148,7 @@ jobs:
           submodules: true
       - uses: actions/download-artifact@v4
         with:
-          name: test-tools-macos-12
+          name: test-tools-macos-13
           path: test/plugins/dist
       - name: Set up Go 1.19
         uses: actions/setup-go@v2
@@ -161,7 +163,9 @@ jobs:
         run: |
           brew install docker docker-compose
           brew install colima
-          colima start
+          wget https://raw.githubusercontent.com/Homebrew/homebrew-core/f1a9cf104a9a51779c7a532b658c490f69974839/Formula/q/qemu.rb
+          brew install qemu.rb 2>&1 | tee install.log
+          colima start --arch x86_64
 
           # For testcontainers to find the Colima socket
           # https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#cannot-connect-to-the-docker-daemon-at-unixvarrundockersock-is-the-docker-daemon-running
