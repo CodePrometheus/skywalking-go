@@ -1,5 +1,6 @@
 defer func() {
 	if r := recover(); r != nil {
+        operator.ErrorOfPlugin("{{.InstrumentName}}")
 		// log error
 		log.Errorf("execute interceptor after invoke error, instrument name: %s, interceptor name: %s, function ID: %s, error: %v, stack: %s",
 		    "{{.InstrumentName}}", "{{.InterceptorDefineName}}", "{{.FuncID}}", r, tracing.DebugStack())

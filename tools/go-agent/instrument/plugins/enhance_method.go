@@ -35,7 +35,7 @@ import (
 
 var methodEnhanceAdapterFiles = make(map[string]bool)
 var methodImportAgentCorePackages = []string{
-	"log", "tracing", "operator",
+	"log", "tracing", "operator", "metrics",
 }
 
 type MethodEnhance struct {
