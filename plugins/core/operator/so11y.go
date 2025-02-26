@@ -19,6 +19,8 @@ package operator
 
 type So11yOperator interface {
 	CollectErrorOfPlugin(pluginName string)
+	GenNanoTime() int64
+	CollectDurationOfInterceptor(costTime int64)
 }
 
 func ErrorOfPlugin(pluginName string) {
@@ -27,4 +29,20 @@ func ErrorOfPlugin(pluginName string) {
 		return
 	}
 	op.(So11yOperator).CollectErrorOfPlugin(pluginName)
+}
+
+func NanoTime() int64 {
+	op := GetOperator()
+	if op == nil {
+		return 0
+	}
+	return op.(So11yOperator).GenNanoTime()
+}
+
+func DurationOfInterceptor(costTime int64) {
+	op := GetOperator()
+	if op == nil {
+		return
+	}
+	op.(So11yOperator).CollectDurationOfInterceptor(costTime)
 }

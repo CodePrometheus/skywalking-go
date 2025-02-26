@@ -234,11 +234,11 @@ func (s *ContextSnapshot) IsValid() bool {
 func (t *Tracer) createNoop(operationName string) (*TracingContext, TracingSpan, bool) {
 	if !t.InitSuccess() || t.Reporter.ConnectionStatus() == reporter.ConnectionStatusDisconnect {
 		GetSo11y().MeasureTracingContextCreation(t, false, true)
-		return nil, newNoopSpan(), true
+		return nil, newNoopSpan(t), true
 	}
 	if tracerIgnore(operationName, t.ignoreSuffix, t.traceIgnorePath) {
 		GetSo11y().MeasureTracingContextCreation(t, false, true)
-		return nil, newNoopSpan(), true
+		return nil, newNoopSpan(t), true
 	}
 	ctx := getTracingContext()
 	if ctx != nil {
@@ -272,11 +272,9 @@ func (t *Tracer) createSpan0(ctx *TracingContext, parent TracingSpan, pluginOpts
 			GetSo11y().MeasureTracingContextCreation(t, false, true)
 			GetSo11y().MeasureLeakedTracingContext(t, true)
 			// Filter by sample just return noop span
-			return newNoopSpan(), true, nil
+			return newNoopSpan(t), true, nil
 		}
 	}
-	GetSo11y().MeasureTracingContextCreation(t, isForceSample, false)
-
 	// process the opts from agent core for prepare building segment span
 	for _, opt := range coreOpts {
 		opt.(tracing.SpanOption).Apply(ds)
@@ -289,6 +287,7 @@ func (t *Tracer) createSpan0(ctx *TracingContext, parent TracingSpan, pluginOpts
 	for _, opt := range pluginOpts {
 		opt.(tracing.SpanOption).Apply(s)
 	}
+	GetSo11y().MeasureTracingContextCreation(t, isForceSample, false)
 	return s, false, nil
 }
 

@@ -18,8 +18,6 @@
 package core
 
 import (
-	"github.com/apache/skywalking-go/plugins/core/operator"
-
 	agentv3 "skywalking.apache.org/repo/goapi/collect/language/agent/v3"
 )
 
@@ -27,6 +25,7 @@ const noopContextValue = "N/A"
 
 type NoopSpan struct {
 	stackCount int
+	tracer     *Tracer
 }
 
 func newSnapshotNoopSpan() *NoopSpan {
@@ -36,9 +35,10 @@ func newSnapshotNoopSpan() *NoopSpan {
 	}
 }
 
-func newNoopSpan() *NoopSpan {
+func newNoopSpan(tracer *Tracer) *NoopSpan {
 	return &NoopSpan{
 		stackCount: 1,
+		tracer:     tracer,
 	}
 }
 
@@ -101,8 +101,7 @@ func (n *NoopSpan) enterNoSpan() {
 func (n *NoopSpan) End() {
 	n.stackCount--
 	if n.stackCount == 0 {
-		op := operator.GetOperator()
-		GetSo11y().MeasureTracingContextCompletion(op.Tracing().(operator.TracingOperator).(*Tracer), false)
+		GetSo11y().MeasureTracingContextCompletion(n.tracer, true)
 		if ctx := getTracingContext(); ctx != nil {
 			ctx.SaveActiveSpan(nil)
 		}

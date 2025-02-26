@@ -19,6 +19,7 @@ package core
 
 import (
 	"sync"
+	"time"
 
 	"github.com/apache/skywalking-go/plugins/core/metrics"
 )
@@ -29,14 +30,20 @@ var (
 )
 
 type So11y struct {
-	propagatedContextCounter    metrics.Counter
-	samplerIgnoreContextCounter metrics.Counter
-	finishIgnoreContextCounter  metrics.Counter
-	finishContextCounter        metrics.Counter
-	leakedIgnoreContextCounter  metrics.Counter
-	leakedContextCounter        metrics.Counter
+	propagatedContextCounter       metrics.Counter
+	propagatedIgnoreContextCounter metrics.Counter
 
-	errorCounterMap sync.Map
+	samplerContextCounter       metrics.Counter
+	samplerIgnoreContextCounter metrics.Counter
+
+	finishContextCounter       metrics.Counter
+	finishIgnoreContextCounter metrics.Counter
+
+	leakedContextCounter       metrics.Counter
+	leakedIgnoreContextCounter metrics.Counter
+
+	errorCounterMap     sync.Map
+	interceptorTimeCost metrics.Histogram
 }
 
 func GetSo11y() *So11y {
@@ -49,15 +56,19 @@ func GetSo11y() *So11y {
 func (s *So11y) MeasureTracingContextCreation(t *Tracer, isForceSample, isIgnored bool) {
 	if isForceSample {
 		if isIgnored {
-			if s.propagatedContextCounter == nil {
-				s.propagatedContextCounter = t.NewCounter("sw_go_created_ignored_context_counter",
-					metrics.WithLabel("created_by", "propagated")).(metrics.Counter)
+			if s.propagatedIgnoreContextCounter == nil {
+				s.propagatedIgnoreContextCounter = t.NewCounter("sw_go_created_ignored_context_counter",
+					&metrics.Opts{
+						Labels: map[string]string{"created_by": "propagated"},
+					}).(metrics.Counter)
 			}
-			s.propagatedContextCounter.Inc(1)
+			s.propagatedIgnoreContextCounter.Inc(1)
 		} else {
 			if s.propagatedContextCounter == nil {
 				s.propagatedContextCounter = t.NewCounter("sw_go_created_tracing_context_counter",
-					metrics.WithLabel("created_by", "propagated")).(metrics.Counter)
+					&metrics.Opts{
+						Labels: map[string]string{"created_by": "propagated"},
+					}).(metrics.Counter)
 			}
 			s.propagatedContextCounter.Inc(1)
 		}
@@ -65,15 +76,18 @@ func (s *So11y) MeasureTracingContextCreation(t *Tracer, isForceSample, isIgnore
 		if isIgnored {
 			if s.samplerIgnoreContextCounter == nil {
 				s.samplerIgnoreContextCounter = t.NewCounter("sw_go_created_ignored_context_counter",
-					metrics.WithLabel("created_by", "sampler")).(metrics.Counter)
+					&metrics.Opts{
+						Labels: map[string]string{"created_by": "sampler"},
+					}).(metrics.Counter)
 			}
 			s.samplerIgnoreContextCounter.Inc(1)
 		} else {
-			if s.samplerIgnoreContextCounter == nil {
-				s.samplerIgnoreContextCounter = t.NewCounter("sw_go_created_tracing_context_counter",
-					metrics.WithLabel("created_by", "sampler")).(metrics.Counter)
+			if s.samplerContextCounter == nil {
+				s.samplerContextCounter = t.NewCounter("sw_go_created_tracing_context_counter", &metrics.Opts{
+					Labels: map[string]string{"created_by": "sampler"},
+				}).(metrics.Counter)
 			}
-			s.samplerIgnoreContextCounter.Inc(1)
+			s.samplerContextCounter.Inc(1)
 		}
 	}
 }
@@ -98,13 +112,17 @@ func (s *So11y) MeasureLeakedTracingContext(t *Tracer, isIgnored bool) {
 	if isIgnored {
 		if s.leakedIgnoreContextCounter == nil {
 			s.leakedIgnoreContextCounter = t.NewCounter("sw_go_possible_leaked_context_counter",
-				metrics.WithLabel("source", "ignore")).(metrics.Counter)
+				&metrics.Opts{
+					Labels: map[string]string{"source": "ignore"},
+				}).(metrics.Counter)
 		}
 		s.leakedIgnoreContextCounter.Inc(1)
 	} else {
 		if s.leakedContextCounter == nil {
 			s.leakedContextCounter = t.NewCounter("sw_go_possible_leaked_context_counter",
-				metrics.WithLabel("source", "tracing")).(metrics.Counter)
+				&metrics.Opts{
+					Labels: map[string]string{"created_by": "tracing"},
+				}).(metrics.Counter)
 		}
 		s.leakedContextCounter.Inc(1)
 	}
@@ -121,9 +139,27 @@ func (t *Tracer) CollectErrorOfPlugin(pluginName string) {
 		}
 	} else {
 		counter, _ := GetSo11y().errorCounterMap.LoadOrStore(pluginName, t.NewCounter(
-			"sw_go_interceptor_error_counter", metrics.WithLabel("plugin_name", pluginName)).(metrics.Counter))
+			"sw_go_interceptor_error_counter",
+			&metrics.Opts{
+				Labels: map[string]string{"plugin_name": pluginName},
+			}).(metrics.Counter))
 		if c, ok := counter.(metrics.Counter); ok {
 			c.Inc(1)
 		}
 	}
+}
+
+func (t *Tracer) GenNanoTime() int64 {
+	return time.Now().UnixNano()
+}
+
+func (t *Tracer) CollectDurationOfInterceptor(costTime int64) {
+	if GetSo11y().interceptorTimeCost == nil {
+		GetSo11y().interceptorTimeCost = t.NewHistogram("sw_go_tracing_context_performance", 0,
+			[]float64{
+				1000, 10000, 50000, 100000, 300000, 500000,
+				1000000, 5000000, 10000000, 20000000, 50000000, 100000000,
+			}, nil).(metrics.Histogram)
+	}
+	GetSo11y().interceptorTimeCost.Observe(float64(costTime))
 }
